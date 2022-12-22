@@ -22,6 +22,9 @@ inputs:
   wait-for-minutes:
     description: 'How long to wait for the task reach stopped state, in minutes (default: 30 minutes, max: 6 hours).'
     required: false
+  container-to-watch:
+    description: 'Container name of which exit code used to check for failure. Only used when wait-for-finish is set (default: null)'
+    required: false
   launch-type:
     description: The launch type of the task, either FARGATE or EC2. Can be overridden by the capacity-provider-strategy.
     required: false

@@ -69,9 +69,9 @@ function removeIgnoredAttributes(taskDef) {
     if (taskDef[attribute]) {
       core.warning(
         `Ignoring property '${attribute}' in the task definition file. ` +
-          'This property is returned by the Amazon ECS DescribeTaskDefinition API and may be shown in the ECS console, ' +
-          'but it is not a valid field when registering a new task definition. ' +
-          'This field can be safely removed from your task definition file.'
+        'This property is returned by the Amazon ECS DescribeTaskDefinition API and may be shown in the ECS console, ' +
+        'but it is not a valid field when registering a new task definition. ' +
+        'This field can be safely removed from your task definition file.'
       );
       delete taskDef[attribute];
     }
@@ -97,6 +97,8 @@ async function run() {
     const startedBy = core.getInput('started-by', { required: false }) || agent;
     const waitForFinish =
       core.getInput('wait-for-finish', { required: false }) || false;
+    const containerToWatch = core.getInput('container-to-watch', { required: false }) || '';
+
     let waitForMinutes =
       parseInt(core.getInput('wait-for-minutes', { required: false })) || 30;
     if (waitForMinutes > MAX_WAIT_MINUTES) {
@@ -197,7 +199,7 @@ async function run() {
         core.setFailed("Failed to parse capacity provider strategy definition: " + error.message);
         core.debug("Parameter value:");
         core.debug(capacityProviderStrategyString);
-        throw(error);
+        throw (error);
       }
     }
 
@@ -230,7 +232,7 @@ async function run() {
 
     if (waitForFinish && waitForFinish.toLowerCase() === 'true') {
       await waitForTasksStopped(ecs, clusterName, taskArns, waitForMinutes);
-      await tasksExitCode(ecs, clusterName, taskArns);
+      await tasksExitCode(ecs, clusterName, containerToWatch, taskArns);
     }
   } catch (error) {
     core.setFailed(error.message);
@@ -265,7 +267,7 @@ async function waitForTasksStopped(ecs, clusterName, taskArns, waitForMinutes) {
   );
 }
 
-async function tasksExitCode(ecs, clusterName, taskArns) {
+async function tasksExitCode(ecs, clusterName, containerName, taskArns) {
   const describeResponse = await ecs
     .describeTasks({
       cluster: clusterName,
@@ -275,7 +277,14 @@ async function tasksExitCode(ecs, clusterName, taskArns) {
 
   const containers = [].concat(
     ...describeResponse.tasks.map((task) => task.containers)
-  );
+  ).filter((container) => {
+    if (containerName == null) {
+      return true
+    } else {
+      return container.name == containerName
+    }
+  });
+
   const exitCodes = containers.map((container) => container.exitCode);
   const reasons = containers.map((container) => container.reason);
 
@@ -300,7 +309,7 @@ async function tasksExitCode(ecs, clusterName, taskArns) {
 
 module.exports = run;
 
-/* istanbul ignore next */
+/* ?? ignore next */
 if (require.main === module) {
   run();
 }

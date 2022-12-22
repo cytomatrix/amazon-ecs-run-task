@@ -36,6 +36,7 @@ describe('Deploy to ECS', () => {
             .mockReturnValueOnce('1')                                         // count
             .mockReturnValueOnce('amazon-ecs-run-task-for-github-actions')    // started-by
             .mockReturnValueOnce('false')                                     // wait-for-finish
+            .mockReturnValueOnce(null)                                        // container-to-watch
             .mockReturnValueOnce('30')                                        // wait-for-minutes
             .mockReturnValueOnce('subnet-123,subnet-456')                     // subnets
             .mockReturnValueOnce('sg-123,sg-456')                             // security-groups
@@ -77,6 +78,14 @@ describe('Deploy to ECS', () => {
                             {
                                 containers: [
                                     {
+                                        name: 'app',
+                                        lastStatus: "RUNNING",
+                                        exitCode: 0,
+                                        reason: '',
+                                        taskArn: "arn:aws:ecs:fake-region:account_id:task/arn"
+                                    },
+                                    {
+                                        name: 'app-tests',
                                         lastStatus: "RUNNING",
                                         exitCode: 0,
                                         reason: '',
@@ -175,6 +184,124 @@ describe('Deploy to ECS', () => {
         expect(mockEcsWaiter).toHaveBeenCalledTimes(1);
 
         expect(core.info).toBeCalledWith("All tasks have exited successfully.");
+    });
+
+    test('registers the task definition contents and waits for tasks to finish successfully using specific container\'s exit code', async () => {
+        mockEcsDescribeTasks.mockImplementation(() => {
+            return {
+                promise() {
+                    return Promise.resolve({
+                        failures: [],
+                        tasks: [
+                            {
+                                containers: [
+                                    {
+                                        name: 'app',
+                                        lastStatus: "FINISHED",
+                                        exitCode: 1,
+                                        reason: '',
+                                        taskArn: "arn:aws:ecs:fake-region:account_id:task/arn"
+                                    },
+                                    {
+                                        name: 'app-tests',
+                                        lastStatus: "FINISHED",
+                                        exitCode: 0,
+                                        reason: '',
+                                        taskArn: "arn:aws:ecs:fake-region:account_id:task/arn"
+                                    }
+                                ],
+                                desiredStatus: "RUNNING",
+                                lastStatus: "RUNNING",
+                                taskArn: "arn:aws:ecs:fake-region:account_id:task/arn"
+                            }
+                         ]
+                    });
+                }
+            };
+        });
+        core.getInput = jest
+            .fn()
+            .mockReturnValueOnce('task-definition.json')                      // task-definition
+            .mockReturnValueOnce('cluster-789')                               // cluster
+            .mockReturnValueOnce('1')                                         // count
+            .mockReturnValueOnce('amazon-ecs-run-task-for-github-actions')    // started-by
+            .mockReturnValueOnce('true')                                      // wait-for-finish
+            .mockReturnValueOnce('app-tests')                             // container-to-watch
+            .mockReturnValueOnce('')                                          // capacity-provider-strategy
+        ;
+
+        await run();
+        expect(core.setFailed).toHaveBeenCalledTimes(0);
+
+        expect(mockEcsRegisterTaskDef).toHaveBeenNthCalledWith(1, { family: 'task-def-family'});
+        expect(core.setOutput).toHaveBeenNthCalledWith(1, 'task-definition-arn', 'task:def:arn');
+        expect(mockEcsDescribeTasks).toHaveBeenNthCalledWith(1, {
+            cluster: 'cluster-789',
+            tasks:  ['arn:aws:ecs:fake-region:account_id:task/arn']
+        });
+
+        expect(mockEcsWaiter).toHaveBeenCalledTimes(1);
+
+        expect(core.info).toBeCalledWith("All tasks have exited successfully.");
+    });
+
+    test('registers the task definition contents and waits for tasks to finish unsucessfully using specific container\'s exit code', async () => {
+        mockEcsDescribeTasks.mockImplementation(() => {
+            return {
+                promise() {
+                    return Promise.resolve({
+                        failures: [],
+                        tasks: [
+                            {
+                                containers: [
+                                    {
+                                        name: 'app',
+                                        lastStatus: "FINISHED",
+                                        exitCode: 1,
+                                        reason: '',
+                                        taskArn: "arn:aws:ecs:fake-region:account_id:task/arn"
+                                    },
+                                    {
+                                        name: 'app-tests',
+                                        lastStatus: "FINISHED",
+                                        exitCode: 0,
+                                        reason: '',
+                                        taskArn: "arn:aws:ecs:fake-region:account_id:task/arn"
+                                    }
+                                ],
+                                desiredStatus: "RUNNING",
+                                lastStatus: "RUNNING",
+                                taskArn: "arn:aws:ecs:fake-region:account_id:task/arn"
+                            }
+                         ]
+                    });
+                }
+            };
+        });
+        core.getInput = jest
+            .fn()
+            .mockReturnValueOnce('task-definition.json')                      // task-definition
+            .mockReturnValueOnce('cluster-789')                               // cluster
+            .mockReturnValueOnce('1')                                         // count
+            .mockReturnValueOnce('amazon-ecs-run-task-for-github-actions')    // started-by
+            .mockReturnValueOnce('true')                                      // wait-for-finish
+            .mockReturnValueOnce('app')                             // container-to-watch
+            .mockReturnValueOnce('')                                          // capacity-provider-strategy
+        ;
+
+        await run();
+        expect(core.setFailed).toHaveBeenCalledTimes(1);
+
+        expect(mockEcsRegisterTaskDef).toHaveBeenNthCalledWith(1, { family: 'task-def-family'});
+        expect(core.setOutput).toHaveBeenNthCalledWith(1, 'task-definition-arn', 'task:def:arn');
+        expect(mockEcsDescribeTasks).toHaveBeenNthCalledWith(1, {
+            cluster: 'cluster-789',
+            tasks:  ['arn:aws:ecs:fake-region:account_id:task/arn']
+        });
+
+        expect(mockEcsWaiter).toHaveBeenCalledTimes(1);
+
+        expect(core.info).toBeCalledWith("All tasks have stopped. Watch progress in the Amazon ECS console: https://console.aws.amazon.com/ecs/home?region=fake-region#/clusters/cluster-789/tasks");
     });
 
     test('cleans null keys out of the task definition contents', async () => {
@@ -296,6 +423,7 @@ describe('Deploy to ECS', () => {
             .mockReturnValueOnce('1')                                         // count
             .mockReturnValueOnce('amazon-ecs-run-task-for-github-actions')    // started-by
             .mockReturnValueOnce('false')                                     // wait-for-finish
+            .mockReturnValueOnce('')                                          // container-to-watch
             .mockReturnValueOnce('30')                                        // wait-for-minutes
             .mockReturnValueOnce('subnet-123,subnet-456')                     // subnets
             .mockReturnValueOnce('sg-123,sg-456')                             // security-groups
